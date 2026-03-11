@@ -2,8 +2,8 @@
  * 文件名: wt_multidatafittingwidget.cpp
  * 文件作用: 多数据试井拟合分析核心界面实现文件
  * 功能描述:
- * 1. 彻底解决弹窗样式穿透污染问题，移除了C++级别的强行 setStyleSheet 注入。
- * 2. 将“保存结果”按钮置于运行与停止之间并赋予响应逻辑。
+ * 1. 提供多数据试井拟合管理及显示。
+ * 2. 将弹窗等控件风格统一调整至单数据拟合分析页面风格。
  * 3. 包含智能多数据拟合算法及实时动态图表逼近。
  */
 
@@ -32,6 +32,7 @@
 #include <QHBoxLayout>
 #include <QApplication>
 
+// 构造函数：初始化组件、绑定信号槽
 WT_MultidataFittingWidget::WT_MultidataFittingWidget(QWidget *parent) :
     QWidget(parent),
     ui(new Ui::WT_MultidataFittingWidget),
@@ -46,8 +47,8 @@ WT_MultidataFittingWidget::WT_MultidataFittingWidget(QWidget *parent) :
     m_userDefinedTimeMax(-1.0)
 {
     ui->setupUi(this);
-    // 【修改点】：严格去除了此处的 setStyleSheet，防止污染内部衍生的弹窗，全部样式靠 ui 文件的 CSS 保障
 
+    // 清理可能存在的旧布局并设置新布局
     if (ui->plotContainer->layout()) {
         QLayoutItem* item;
         while ((item = ui->plotContainer->layout()->takeAt(0)) != nullptr) {
@@ -59,11 +60,13 @@ WT_MultidataFittingWidget::WT_MultidataFittingWidget(QWidget *parent) :
     containerLayout->setContentsMargins(0,0,0,0);
     containerLayout->setSpacing(0);
 
+    // MDI 窗口区域
     m_mdiArea = new QMdiArea(this);
     m_mdiArea->setViewMode(QMdiArea::SubWindowView);
     m_mdiArea->setBackground(QBrush(QColor(240, 240, 240)));
     containerLayout->addWidget(m_mdiArea);
 
+    // 初始化三种主要图表窗口
     m_chartLogLog = new FittingChart1(this);
     m_chartSemiLog = new FittingChart2(this);
     m_chartCartesian = new FittingChart3(this);
@@ -72,21 +75,24 @@ WT_MultidataFittingWidget::WT_MultidataFittingWidget(QWidget *parent) :
     m_plotSemiLog = m_chartSemiLog->getPlot();
     m_plotCartesian = m_chartCartesian->getPlot();
 
-    m_chartLogLog->setTitle("双对数多数据曲线 (Log-Log)");
-    m_chartSemiLog->setTitle("半对数多数据曲线 (Semi-Log)");
-    m_chartCartesian->setTitle("历史多数据曲线 (History Plot)");
+    m_chartLogLog->setTitle("双对数曲线 (Log-Log)");
+    m_chartSemiLog->setTitle("半对数曲线 (Semi-Log)");
+    m_chartCartesian->setTitle("历史拟合曲线 (History Plot)");
 
     m_subWinLogLog = m_mdiArea->addSubWindow(m_chartLogLog);
     m_subWinSemiLog = m_mdiArea->addSubWindow(m_chartSemiLog);
     m_subWinCartesian = m_mdiArea->addSubWindow(m_chartCartesian);
 
     ui->splitter->setSizes(QList<int>() << 350 << 1000);
+    ui->splitter->setCollapsible(0, false);
 
+    // 参数表
     m_paramChart = new FittingParameterChart(ui->tableParams, this);
 
     setupPlot();
     m_chartManager->initializeCharts(m_plotLogLog, m_plotSemiLog, m_plotCartesian);
 
+    // 初始化数据组表格
     ui->tableDataGroups->setColumnCount(5);
     ui->tableDataGroups->setHorizontalHeaderLabels({"数据名称", "颜色", "压差", "压力导数", "权重"});
     ui->tableDataGroups->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -114,12 +120,13 @@ WT_MultidataFittingWidget::WT_MultidataFittingWidget(QWidget *parent) :
     connect(m_chartManager, &FittingChart::sigManualPressureUpdated, this, &WT_MultidataFittingWidget::onSemiLogLineMoved);
 }
 
+// 析构函数：释放 UI 资源
 WT_MultidataFittingWidget::~WT_MultidataFittingWidget()
 {
     delete ui;
 }
 
-// 槽函数：保存拟合与参数的结果状态
+// 槽函数：保存拟合状态
 void WT_MultidataFittingWidget::on_btnSave_clicked()
 {
     if (m_dataGroups.isEmpty()) {
@@ -131,6 +138,7 @@ void WT_MultidataFittingWidget::on_btnSave_clicked()
     QMessageBox::information(this, "保存成功", "当前多数据分析与拟合参数状态已保存。");
 }
 
+// 设置模型管理器
 void WT_MultidataFittingWidget::setModelManager(ModelManager *m)
 {
     m_modelManager = m;
@@ -139,17 +147,20 @@ void WT_MultidataFittingWidget::setModelManager(ModelManager *m)
     initializeDefaultModel();
 }
 
+// 设置项目数据模型映射
 void WT_MultidataFittingWidget::setProjectDataModels(const QMap<QString, QStandardItemModel *> &models)
 {
     m_dataMap = models;
 }
 
+// 设置图表交互模式
 void WT_MultidataFittingWidget::setupPlot() {
     m_plotLogLog->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
     m_plotSemiLog->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
     m_plotCartesian->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
 }
 
+// 初始化默认模型
 void WT_MultidataFittingWidget::initializeDefaultModel()
 {
     if(!m_modelManager) return;
@@ -157,9 +168,8 @@ void WT_MultidataFittingWidget::initializeDefaultModel()
     m_isUpdatingTable = true;
     m_currentModelType = ModelManager::Model_1;
 
-    QString fullModelName = ModelManager::getModelTypeName(m_currentModelType);
-    QString shortModelName = fullModelName.split("(").first().trimmed();
-    ui->btn_modelSelect->setText(shortModelName);
+    // 统一样式：显示名称
+    ui->btn_modelSelect->setText(ModelManager::getModelTypeName(m_currentModelType));
 
     m_paramChart->resetParams(m_currentModelType, true);
     loadProjectParams();
@@ -167,18 +177,21 @@ void WT_MultidataFittingWidget::initializeDefaultModel()
     m_isUpdatingTable = false;
 }
 
+// 调整大小事件处理
 void WT_MultidataFittingWidget::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     layoutCharts();
 }
 
+// 窗口显示事件处理
 void WT_MultidataFittingWidget::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
     layoutCharts();
 }
 
+// 重新布局 MDI 窗口
 void WT_MultidataFittingWidget::layoutCharts()
 {
     if (!m_mdiArea || !m_subWinLogLog || !m_subWinSemiLog || !m_subWinCartesian) return;
@@ -190,6 +203,7 @@ void WT_MultidataFittingWidget::layoutCharts()
     m_subWinSemiLog->setGeometry(w / 2, h / 2, w - (w / 2), h - (h / 2));
 }
 
+// 槽函数：滚轮调整参数时触发
 void WT_MultidataFittingWidget::onParameterChangedByWheel()
 {
     if (m_isUpdatingTable || m_isFitting) return;
@@ -197,6 +211,7 @@ void WT_MultidataFittingWidget::onParameterChangedByWheel()
     updateModelCurve(nullptr, false, false);
 }
 
+// 槽函数：表格项改变时触发
 void WT_MultidataFittingWidget::onParameterTableItemChanged(QTableWidgetItem *item)
 {
     if (m_isUpdatingTable || m_isFitting || !item) return;
@@ -206,6 +221,7 @@ void WT_MultidataFittingWidget::onParameterTableItemChanged(QTableWidgetItem *it
     }
 }
 
+// 槽函数：添加观测数据
 void WT_MultidataFittingWidget::on_btnAddData_clicked()
 {
     if (m_dataMap.isEmpty()) {
@@ -278,6 +294,7 @@ void WT_MultidataFittingWidget::on_btnAddData_clicked()
     updateModelCurve(nullptr, true, false);
 }
 
+// 刷新数据表格视图
 void WT_MultidataFittingWidget::refreshDataTable()
 {
     ui->tableDataGroups->blockSignals(true);
@@ -343,6 +360,7 @@ void WT_MultidataFittingWidget::refreshDataTable()
     ui->tableDataGroups->blockSignals(false);
 }
 
+// 槽函数：单元格点击
 void WT_MultidataFittingWidget::onTableCellClicked(int row, int col)
 {
     if (col == 1) {
@@ -355,6 +373,7 @@ void WT_MultidataFittingWidget::onTableCellClicked(int row, int col)
     }
 }
 
+// 槽函数：权重调整
 void WT_MultidataFittingWidget::onDataWeightChanged(int row, int col)
 {
     if (col == 0) {
@@ -372,6 +391,7 @@ void WT_MultidataFittingWidget::onDataWeightChanged(int row, int col)
     }
 }
 
+// 槽函数：右键菜单显示
 void WT_MultidataFittingWidget::showContextMenu(const QPoint &pos)
 {
     int row = ui->tableDataGroups->rowAt(pos.y());
@@ -392,6 +412,7 @@ void WT_MultidataFittingWidget::showContextMenu(const QPoint &pos)
     }
 }
 
+// 验证数据权重
 bool WT_MultidataFittingWidget::validateDataWeights()
 {
     double sum = 0.0;
@@ -403,6 +424,7 @@ bool WT_MultidataFittingWidget::validateDataWeights()
     return true;
 }
 
+// 槽函数：选择试井模型
 void WT_MultidataFittingWidget::on_btn_modelSelect_clicked()
 {
     ModelSelect dlg(this);
@@ -415,9 +437,7 @@ void WT_MultidataFittingWidget::on_btn_modelSelect_clicked()
         m_currentModelType = (ModelManager::ModelType)(code.toInt() - 1);
         m_paramChart->switchModel(m_currentModelType);
 
-        QString fullModelName = ModelManager::getModelTypeName(m_currentModelType);
-        QString shortModelName = fullModelName.split("(").first().trimmed();
-        ui->btn_modelSelect->setText(shortModelName);
+        ui->btn_modelSelect->setText(ModelManager::getModelTypeName(m_currentModelType));
 
         loadProjectParams();
         hideUnwantedParams();
@@ -427,6 +447,7 @@ void WT_MultidataFittingWidget::on_btn_modelSelect_clicked()
     }
 }
 
+// 槽函数：选择与配置参数
 void WT_MultidataFittingWidget::on_btnSelectParams_clicked()
 {
     m_paramChart->updateParamsFromTable();
@@ -446,6 +467,7 @@ void WT_MultidataFittingWidget::on_btnSelectParams_clicked()
     }
 }
 
+// 槽函数：数据抽样设置
 void WT_MultidataFittingWidget::on_btnSampling_clicked()
 {
     if (m_dataGroups.isEmpty()) return;
@@ -506,12 +528,14 @@ void WT_MultidataFittingWidget::on_btnSampling_clicked()
     }
 }
 
+// 槽函数：拟合方式变化
 void WT_MultidataFittingWidget::on_comboFitMode_currentIndexChanged(int index)
 {
     Q_UNUSED(index);
     updateModelCurve(nullptr, true, false);
 }
 
+// 插值计算
 QVector<double> WT_MultidataFittingWidget::interpolate(const QVector<double>& srcX, const QVector<double>& srcY, const QVector<double>& targetX)
 {
     QVector<double> result;
@@ -532,6 +556,7 @@ QVector<double> WT_MultidataFittingWidget::interpolate(const QVector<double>& sr
     return result;
 }
 
+// 生成通用时间网格
 QVector<double> WT_MultidataFittingWidget::generateCommonTimeGrid()
 {
     QVector<double> commonT;
@@ -553,6 +578,7 @@ QVector<double> WT_MultidataFittingWidget::generateCommonTimeGrid()
     return commonT;
 }
 
+// 槽函数：开始多数据自动拟合
 void WT_MultidataFittingWidget::on_btnRunFit_clicked()
 {
     if(m_isFitting) return;
@@ -569,7 +595,7 @@ void WT_MultidataFittingWidget::on_btnRunFit_clicked()
     int mode = ui->comboFitMode->currentIndex();
     QVector<double> fitT, fitP, fitD;
 
-    if (mode == 0) {
+    if (mode == 0) { // 方法一
         QVector<double> unionT;
         for(const auto& g : m_dataGroups) {
             if(g.weight > 0 && !g.time.isEmpty()) unionT.append(g.time);
@@ -596,7 +622,7 @@ void WT_MultidataFittingWidget::on_btnRunFit_clicked()
             }
         }
     }
-    else {
+    else { // 方法二
         int masterIdx = -1;
         double maxW = -1.0;
         for(int i=0; i<m_dataGroups.size(); ++i) {
@@ -634,17 +660,20 @@ void WT_MultidataFittingWidget::on_btnRunFit_clicked()
     m_core->startFit(m_currentModelType, m_paramChart->getParameters(), 1.0);
 }
 
+// 槽函数：停止拟合
 void WT_MultidataFittingWidget::on_btnStop_clicked()
 {
     if(m_core) m_core->stopFit();
 }
 
+// 槽函数：理论模型更新
 void WT_MultidataFittingWidget::on_btnImportModel_clicked()
 {
     m_paramChart->updateParamsFromTable();
     updateModelCurve(nullptr, false, false);
 }
 
+// 更新模型理论曲线
 void WT_MultidataFittingWidget::updateModelCurve(const QMap<QString, double>* explicitParams, bool autoScale, bool calcError)
 {
     if(!m_modelManager) return;
@@ -722,6 +751,7 @@ void WT_MultidataFittingWidget::updateModelCurve(const QMap<QString, double>* ex
     m_plotCartesian->replot();
 }
 
+// 槽函数：接收迭代更新的拟合参数及图表绘制
 void WT_MultidataFittingWidget::onIterationUpdate(double err, const QMap<QString,double>& p, const QVector<double>& t, const QVector<double>& p_curve, const QVector<double>& d_curve)
 {
     ui->label_Error->setText(QString("综合误差(MSE): %1").arg(err, 0, 'e', 3));
@@ -744,6 +774,7 @@ void WT_MultidataFittingWidget::onIterationUpdate(double err, const QMap<QString
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
+// 槽函数：拟合完成事件
 void WT_MultidataFittingWidget::onFitFinished()
 {
     m_isFitting = false;
@@ -751,6 +782,7 @@ void WT_MultidataFittingWidget::onFitFinished()
     QMessageBox::information(this, "完成", "多数据拟合迭代计算已正常结束。");
 }
 
+// 导出曲线数据
 void WT_MultidataFittingWidget::onExportCurveData()
 {
     QString defaultDir = ModelParameter::instance()->getProjectPath();
@@ -789,6 +821,7 @@ void WT_MultidataFittingWidget::onExportCurveData()
     }
 }
 
+// 手动调整半对数直线
 void WT_MultidataFittingWidget::onSemiLogLineMoved(double k, double b)
 {
     Q_UNUSED(k);
@@ -809,6 +842,7 @@ void WT_MultidataFittingWidget::onSemiLogLineMoved(double k, double b)
     }
 }
 
+// 隐藏无用参数
 void WT_MultidataFittingWidget::hideUnwantedParams()
 {
     for(int i = 0; i < ui->tableParams->rowCount(); ++i) {
@@ -817,6 +851,7 @@ void WT_MultidataFittingWidget::hideUnwantedParams()
     }
 }
 
+// 加载项目通用物理参数
 void WT_MultidataFittingWidget::loadProjectParams()
 {
     ModelParameter* mp = ModelParameter::instance();
@@ -834,6 +869,7 @@ void WT_MultidataFittingWidget::loadProjectParams()
     }
 }
 
+// 颜色映射生成器
 QColor WT_MultidataFittingWidget::getColor(int index) {
     static QList<QColor> colors = { QColor("#1f77b4"), QColor("#ff7f0e"), QColor("#2ca02c"), QColor("#d62728"), QColor("#9467bd") };
     return colors[index % colors.size()];
